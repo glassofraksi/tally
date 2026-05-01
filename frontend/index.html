@@ -167,9 +167,9 @@
       box-shadow: none;
     }
 
-    .layout {
+    .layout-stack {
       display: grid;
-      grid-template-columns: 1.15fr .85fr;
+      grid-template-columns: 1fr;
       gap: 24px;
       margin-top: 24px;
     }
@@ -711,8 +711,24 @@
       font-size: 13px;
     }
 
-    @media (max-width: 1180px) {
-      .layout { grid-template-columns: 1fr; }
+    
+
+
+
+    .sortable-th:hover { color: var(--accent); }
+    .sort-active { color: var(--accent) !important; }
+    .sort-arrow { font-size: 11px; margin-left: 4px; opacity: .7; }
+
+    #calendar-collapsible {
+      overflow: hidden;
+      transition: max-height 500ms cubic-bezier(.4,0,.2,1), opacity 300ms ease;
+      max-height: 2000px;
+      opacity: 1;
+    }
+    #calendar-collapsible.collapsed {
+      max-height: 0;
+      opacity: 0;
+      pointer-events: none;
     }
 
     @media (max-width: 780px) {
@@ -752,9 +768,8 @@
       </div>
     </header>
 
-    <main class="layout">
-      <section class="stack">
-        <section class="panel">
+    <main class="layout-stack">
+      <section class="panel">
           <div class="panel-inner">
             <div class="panel-head">
               <div>
@@ -762,7 +777,9 @@
                 <h2>Upload calendar</h2>
                 <p>Click any day to review a CSV, then manually push it to the database. Success only appears after the save action is completed.</p>
               </div>
+              <button class="ghost-btn" id="toggle-calendar" aria-expanded="true">Collapse ↑</button>
             </div>
+            <div id="calendar-collapsible">
 
             <div class="metrics">
               <div class="metric-card">
@@ -809,11 +826,9 @@
               <div class="calendar-grid" id="calendar-grid"></div>
             </div>
           </div>
-        </section>
-      </section>
+        
 
-      <section class="stack">
-        <section class="panel table-panel">
+      <section class="panel table-panel">
           <div class="panel-inner">
             <div class="panel-head">
               <div>
@@ -830,18 +845,9 @@
 
             <div class="table-wrap" id="table-wrap"></div>
 
-            <div class="mini-card-grid">
-              <div class="mini-card">
-                <h3>Save flow</h3>
-                <p>Upload does not save automatically. The preview appears first, then the Save to database button commits the cleaned rows.</p>
-              </div>
-              <div class="mini-card">
-                <h3>Count logic</h3>
-                <p>New tickers start at 1. Existing tickers compare against their last values, overwrite with the new ones, and only increment when at least two values increase with no decreases.</p>
-              </div>
             </div>
-          </div>
         </section>
+        
       </section>
     </main>
   </div>
@@ -991,17 +997,37 @@
       }
     }
 
+    let sortKey = 'count';
+    let sortDir = 'desc';
+
+    const COLS = [
+      { key: 'ticker',                          label: 'Ticker' },
+      { key: 'date',                             label: 'Date' },
+      { key: 'pct_change_current_quarter',       label: '% Ch Curr Qtr' },
+      { key: 'pct_change_next_quarter',          label: '% Ch Next Qtr' },
+      { key: 'pct_change_current_fiscal_year',   label: '% Ch Curr Fiscal Yr' },
+      { key: 'num_current_fiscal_year_estimates',label: '# Curr Fiscal Yr Est' },
+      { key: 'count',                            label: 'Count' },
+    ];
+
+    function sortRows(rows) {
+      return [...rows].sort((a, b) => {
+        let av = a[sortKey], bv = b[sortKey];
+        if (typeof av === 'string') av = av.toLowerCase(), bv = bv.toLowerCase();
+        else av = Number(av), bv = Number(bv);
+        if (av < bv) return sortDir === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
     function buildTable(rows, preview = false) {
       if (!rows.length) return '<div class="empty-state">No data yet. Upload a CSV to get started.</div>';
 
-      const head = preview
-        ? '<tr><th>Ticker</th><th>% Ch Curr Qtr</th><th>% Ch Next Qtr</th><th>% Ch Curr Fiscal Yr</th><th># Curr Fiscal Yr Est</th></tr>'
-        : '<tr><th>Ticker</th><th>Date</th><th>% Ch Curr Qtr</th><th>% Ch Next Qtr</th><th>% Ch Curr Fiscal Yr</th><th># Curr Fiscal Yr Est</th><th>Count</th></tr>';
-
-      const body = rows.map(row => {
-        const tk = preview ? row.ticker : row.ticker;
-        const badge = `<div class="ticker-cell"><div class="ticker-badge">${tk.slice(0,2)}</div><span>${tk}</span></div>`;
-        if (preview) {
+      if (preview) {
+        const head = '<tr><th>Ticker</th><th>% Ch Curr Qtr</th><th>% Ch Next Qtr</th><th>% Ch Curr Fiscal Yr</th><th># Curr Fiscal Yr Est</th></tr>';
+        const body = rows.map(row => {
+          const badge = `<div class="ticker-cell"><div class="ticker-badge">${row.ticker.slice(0,2)}</div><span>${row.ticker}</span></div>`;
           return `<tr>
             <td>${badge}</td>
             <td>${Number(row.pct_change_current_quarter).toFixed(2)}</td>
@@ -1009,7 +1035,20 @@
             <td>${Number(row.pct_change_current_fiscal_year).toFixed(2)}</td>
             <td>${row.num_current_fiscal_year_estimates}</td>
           </tr>`;
-        }
+        }).join('');
+        return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+      }
+
+      const sorted = sortRows(rows);
+
+      const headCells = COLS.map(col => {
+        const active = sortKey === col.key;
+        const arrow = active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕';
+        return `<th class="sortable-th${active ? ' sort-active' : ''}" data-key="${col.key}" style="cursor:pointer;user-select:none;">${col.label}<span class="sort-arrow">${arrow}</span></th>`;
+      }).join('');
+
+      const body = sorted.map(row => {
+        const badge = `<div class="ticker-cell"><div class="ticker-badge">${row.ticker.slice(0,2)}</div><span>${row.ticker}</span></div>`;
         return `<tr>
           <td>${badge}</td>
           <td class="muted">${row.date}</td>
@@ -1021,12 +1060,24 @@
         </tr>`;
       }).join('');
 
-      return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+      return `<table><thead><tr>${headCells}</tr></thead><tbody>${body}</tbody></table>`;
     }
 
     function renderOutput(filter = '') {
       const rows = allTableRows.filter(r => r.ticker.toLowerCase().includes(filter.toLowerCase()));
       tableWrap.innerHTML = buildTable(rows, false);
+      tableWrap.querySelectorAll('.sortable-th').forEach(th => {
+        th.addEventListener('click', () => {
+          const key = th.dataset.key;
+          if (sortKey === key) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            sortKey = key;
+            sortDir = key === 'ticker' || key === 'date' ? 'asc' : 'desc';
+          }
+          renderOutput(tableSearch.value);
+        });
+      });
     }
 
     function openModal(dateKey) {
@@ -1144,6 +1195,14 @@
     fileInput.addEventListener('change', (e) => {
       const file = e.target.files?.[0];
       if (file) parseFile(file);
+    });
+
+    document.getElementById('toggle-calendar').addEventListener('click', () => {
+      const col = document.getElementById('calendar-collapsible');
+      const btn = document.getElementById('toggle-calendar');
+      const isCollapsed = col.classList.toggle('collapsed');
+      btn.setAttribute('aria-expanded', String(!isCollapsed));
+      btn.textContent = isCollapsed ? 'Expand ↓' : 'Collapse ↑';
     });
 
     (async function init() {
