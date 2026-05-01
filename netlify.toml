@@ -1,7 +1,7 @@
 [build]
-  command = "pip install -r requirements.txt"
   publish = "frontend"
   functions = "netlify/functions"
+  command = "npm install"
 
 [dev]
   framework = "#static"
